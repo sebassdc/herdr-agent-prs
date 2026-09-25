@@ -385,9 +385,9 @@ mod tests {
 
     #[test]
     fn git_push_output_yields_branches() {
-        let out = "remote: Create a pull request for 'feat/x':\nTo github.com:acme/drip.git\n * [new branch]      feat/x -> feat/x\n   1a2b3c..4d5e6f  HEAD -> fix/y\n ! [rejected]        other -> other (fetch first)\n   aaa111..bbb222  main -> main\n";
+        let out = "remote: Create a pull request for 'feat/x':\nTo github.com:acme/widgets.git\n * [new branch]      feat/x -> feat/x\n   1a2b3c..4d5e6f  HEAD -> fix/y\n ! [rejected]        other -> other (fetch first)\n   aaa111..bbb222  main -> main\n";
         let got: Vec<String> = pushes_from_output(out).into_iter().map(|p| format!("{}/{}:{}", p.owner, p.repo, p.branch)).collect();
-        assert_eq!(got, vec!["acme/drip:feat/x", "acme/drip:fix/y"]);
+        assert_eq!(got, vec!["acme/widgets:feat/x", "acme/widgets:fix/y"]);
     }
 
     #[test]
