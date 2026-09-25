@@ -85,6 +85,16 @@ impl Reason {
     }
 }
 
+/// A rendered `repo#N` label and where it sits on screen.
+struct Link {
+    x: u16,
+    y: u16,
+    text: String,
+    url: String,
+    selected: bool,
+    dim: bool,
+}
+
 struct Entry {
     pr: PrRef,
     signal: Signal,
@@ -141,6 +151,8 @@ struct App {
     /// Show everything: merged, mentions, and PRs you marked not-mine.
     show_all: bool,
     help: bool,
+    /// PR labels to re-emit as OSC 8 hyperlinks after each frame.
+    links: Vec<Link>,
     last_counts: Option<(usize, usize, usize)>,
     opened_at: Instant,
     pushes: Pushes,
@@ -179,6 +191,7 @@ impl App {
             labels: Default::default(),
             show_all: false,
             help: false,
+            links: Vec::new(),
             last_counts: None,
             opened_at: Instant::now(),
             pushes: Pushes::new(),
@@ -595,6 +608,7 @@ fn merge_span(s: &PrStatus) -> Span<'static> {
 }
 
 fn render(app: &mut App, f: &mut Frame) {
+    app.links.clear();
     let [head, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(f.area());
     let visible = app.visible();
     let hidden = if app.hide_merged { app.hidden_merged() } else { 0 };
@@ -684,6 +698,17 @@ fn render(app: &mut App, f: &mut Frame) {
             if dim { row.style(DIM) } else { row }
         })
         .collect();
+    let link_rows: Vec<(String, String, bool)> = visible
+        .iter()
+        .map(|e| {
+            let dim = match app.labels.get(&e.pr.url()) {
+                Some(Label::NotMine) => true,
+                Some(Label::Mine) => false,
+                None => e.signal == Signal::Mentioned,
+            };
+            (format!("{}#{}", e.pr.repo, e.pr.number), e.pr.url(), dim)
+        })
+        .collect();
     let table = Table::new(
         rows,
         [
@@ -700,6 +725,22 @@ fn render(app: &mut App, f: &mut Frame) {
     .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
     .highlight_symbol("▸");
     f.render_stateful_widget(table, body, &mut app.table);
+
+    // Remember where each visible `repo#N` landed so the main loop can
+    // overlay it as a hyperlink. Layout: highlight symbol (1 col, always
+    // reserved while a row is selected), then the 2-col marker.
+    let offset = app.table.offset();
+    let selected = app.table.selected();
+    for (i, (text, url, dim)) in link_rows.into_iter().enumerate().skip(offset).take(body.height as usize) {
+        app.links.push(Link {
+            x: body.x + 3,
+            y: body.y + (i - offset) as u16,
+            text,
+            url,
+            selected: selected == Some(i),
+            dim,
+        });
+    }
 }
 
 pub fn run() -> Result<()> {
@@ -716,6 +757,37 @@ pub fn run() -> Result<()> {
     Ok(res?)
 }
 
+/// Re-print each PR label wrapped in OSC 8 so Ctrl/Cmd+click opens it.
+/// Same text and style as the cell underneath, so the layout is unchanged.
+fn write_links(links: &[Link]) -> io::Result<()> {
+    use crossterm::{
+        cursor::MoveTo,
+        queue,
+        style::{Attribute, Color as CColor, Print, ResetColor, SetAttribute, SetForegroundColor},
+    };
+    use std::io::Write;
+    if links.is_empty() {
+        return Ok(());
+    }
+    let mut out = io::stdout();
+    for l in links {
+        queue!(out, MoveTo(l.x, l.y))?;
+        if l.dim {
+            queue!(out, SetForegroundColor(CColor::DarkGrey))?;
+        }
+        if l.selected {
+            queue!(out, SetAttribute(Attribute::Reverse))?;
+        }
+        queue!(
+            out,
+            Print(format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", l.url, l.text)),
+            SetAttribute(Attribute::Reset),
+            ResetColor
+        )?;
+    }
+    out.flush()
+}
+
 fn main_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     app.rescan(true);
     app.log("strip_open", serde_json::json!({ "position": app.position.as_str() }));
@@ -725,6 +797,7 @@ fn main_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
         app.log_scan();
         app.fit();
         terminal.draw(|f| render(app, f))?;
+        write_links(&app.links)?;
         if event::poll(TICK)? {
             if let Event::Key(k) = event::read()? {
                 if k.kind == KeyEventKind::Press {
