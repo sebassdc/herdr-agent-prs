@@ -2,6 +2,8 @@
 
 Herdr plugin (`sebassdc.agent-prs`): a strip docked to an agent pane that lists the pull requests **that agent** opened or worked on, across any repos, with live state (draft/open/merged/closed, CI, review, mergeability, diff size). It does not depend on the pane's working directory.
 
+![Agent PRs strip: an agent opens PRs in two repos, prefix+ctrl+p shows them with CI, review and merge state](assets/demo.gif)
+
 ## How it works
 
 1. `herdr agent get <pane>` gives the agent's session id, which is used to find its transcript (Claude `~/.claude/projects/*/<id>.jsonl` plus its subagent and Workflow transcripts under `<id>/subagents/` and `<id>/workflows/`; Codex `~/.codex/sessions/**/*<id>*.jsonl`). If no transcript is found, it falls back to `herdr pane read` scrollback.
@@ -86,6 +88,17 @@ herdr plugin link ~/dev/herdr-agent-prs
 | `no PRs for this agent` | `herdr-agent-prs scan <pane>` shows the transcript source; press `a` to include mentions and hidden rows |
 | Key does nothing | `herdr plugin list` shows the plugin enabled; the key isn't taken by another binding (avoid `alt` if a window manager owns it) |
 | Strip is taller than its rows | Herdr's minimum split is 10% of the pane |
+
+## Recording the demo
+
+`assets/demo.gif` and `assets/screenshot.png` come from `demo/demo.tape` ([VHS](https://github.com/charmbracelet/vhs)):
+
+```sh
+brew install vhs
+bash demo/record.sh
+```
+
+`record.sh` runs a throwaway Herdr: a temporary `HOME` and config, a separate session, and every `HERDR_*` variable cleared, so running it from inside Herdr cannot reach your real session. The strip shows the fake PRs in `demo/prs.json` through the `demo_file` setting, and `demo/fake-agent.sh` plays a scripted agent. No real repos, transcripts or `gh` calls are involved.
 
 ## Publishing and the Herdr marketplace
 

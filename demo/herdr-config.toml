@@ -1,0 +1,11 @@
+# Isolated Herdr config used only for recording the demo.
+onboarding = false
+
+[ui]
+sidebar_start_collapsed = true
+
+[[keys.command]]
+key = "prefix+ctrl+p"
+type = "plugin_action"
+command = "sebassdc.agent-prs.toggle"
+description = "toggle agent PR strip"
