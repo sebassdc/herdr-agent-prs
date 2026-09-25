@@ -13,28 +13,34 @@ Herdr plugin (`sebassdc.agent-prs`): a strip docked to an agent pane that lists 
 
 ## Requirements
 
-- Herdr >= 0.9, macOS or Linux.
-- `gh` installed and logged in (`gh auth login`), authorized for any org whose private repos you want resolved.
-- Agents running on the same machine as the Herdr server (transcripts are read from local disk: `~/.claude/projects`, `~/.codex/sessions`).
-- Clipboard/opener: `pbcopy`/`open` on macOS, `xclip`/`xdg-open` on Linux.
-- Rust toolchain only when no ready-built binary exists for the platform (see Install).
+- **Herdr >= 0.9** on macOS or Linux (Windows is not supported).
+- **`gh`** installed and logged in (`gh auth login`). For private repos, `gh` needs access to them (and SSO authorization for orgs that enforce it).
+- **Agents on the same machine as the Herdr server.** Transcripts are read from local disk (`~/.claude/projects`, `~/.codex/sessions`). With `herdr --machine`, install the plugin on the remote machine where the agents run.
+- **Clipboard and opener:** `pbcopy`/`open` on macOS, `xclip`/`xdg-open` on Linux.
+- **Rust toolchain:** only needed when no ready-built binary matches the platform or the download fails.
 
 ## Install
+
+### 1. Install the plugin
 
 ```sh
 herdr plugin install sebassdc/herdr-agent-prs
 ```
 
-The build hook (`scripts/build.sh`) downloads the release binary for the platform (macOS arm64/x86_64, Linux x86_64/arm64), verifies it against `SHA256SUMS`, and test-runs it. If any step fails, it builds from source with `cargo`. Releases come from `.github/workflows/release.yml` when a `v<version>` tag is pushed.
+Herdr clones the repo, shows a preview of the source and the build command it will run (`bash scripts/build.sh`), and asks you to confirm (`--yes` skips the prompt). The build script:
 
-Local development:
+1. downloads the release binary for your platform (macOS arm64/x86_64, Linux x86_64/arm64) from the GitHub release matching `version` in `herdr-plugin.toml`;
+2. verifies it against the release `SHA256SUMS`;
+3. test-runs it (a no-argument run must exit 2);
+4. otherwise builds from source with `cargo`.
 
-```sh
-AGENT_PRS_FROM_SOURCE=1 bash scripts/build.sh   # always rebuild
-herdr plugin link ~/dev/herdr-agent-prs
-```
+If the build fails, Herdr does not register the plugin. Pin a version with `--ref v0.1.2`.
 
-Bind the toggle in `~/.config/herdr/config.toml`:
+Herdr installs only from **public** GitHub repos. For a private fork, use the local install below.
+
+### 2. Bind a key
+
+Add to `~/.config/herdr/config.toml`, then run `herdr server reload-config`:
 
 ```toml
 [[keys.command]]
@@ -43,6 +49,55 @@ type = "plugin_action"
 command = "sebassdc.agent-prs.toggle"
 description = "toggle agent PR strip"
 ```
+
+Any free key works. Without a binding, run **Agent PRs: toggle strip** from the Herdr action palette.
+
+### 3. Check it
+
+```sh
+herdr plugin list --plugin sebassdc.agent-prs     # enabled, with its config dir
+herdr plugin log list --plugin sebassdc.agent-prs # build and action logs
+```
+
+Focus an agent pane and press the key. The strip opens above the agent and takes focus. To see what it detects without the UI, use `herdr-agent-prs scan <pane-id>`. The binary is in the plugin root's `bin/`, which `herdr plugin list --json` shows as `plugin_root`.
+
+### Local install (development or private fork)
+
+```sh
+git clone https://github.com/sebassdc/herdr-agent-prs ~/dev/herdr-agent-prs
+cd ~/dev/herdr-agent-prs
+AGENT_PRS_FROM_SOURCE=1 bash scripts/build.sh   # always compile the working tree
+herdr plugin link ~/dev/herdr-agent-prs
+```
+
+`herdr plugin link` does not run build commands, so rebuild after each change. Without `AGENT_PRS_FROM_SOURCE=1`, the script skips the build when `bin/` already has the current version. It also removes the old binary before copying the new one, because macOS kills a binary that is overwritten in place.
+
+### Update and uninstall
+
+- **Update:** Herdr has no update command. Run `herdr plugin install sebassdc/herdr-agent-prs` again. For a linked checkout: `git pull`, then rebuild.
+- **Uninstall:** `herdr plugin uninstall sebassdc.agent-prs` (or `herdr plugin unlink sebassdc.agent-prs` for a linked checkout, which keeps the files). Also remove the key binding. Local data stays in `~/.local/state/herdr-agent-prs/` until you delete it.
+
+### Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| `gh CLI not found on PATH` or `gh api graphql failed` in the header | `gh auth status` in the environment the Herdr server started from |
+| `not found or no access` on a row | `gh` cannot see that repo; check `gh auth` scopes and org SSO |
+| `no PRs for this agent` | `herdr-agent-prs scan <pane>` shows the transcript source; press `a` to include mentions and hidden rows |
+| Key does nothing | `herdr plugin list` shows the plugin enabled; the key isn't taken by another binding (avoid `alt` if a window manager owns it) |
+| Strip is taller than its rows | Herdr's minimum split is 10% of the pane |
+
+## Publishing and the Herdr marketplace
+
+Herdr needs nothing beyond a valid `herdr-plugin.toml` (required: `id`, `name`, `version`, `min_herdr_version`; `platforms` is indexed too) in a **public** GitHub repo. There is no signing or approval step.
+
+The [Herdr marketplace](https://herdr.dev/plugins/) indexes public, non-fork, non-archived repos that have the GitHub topic **`herdr-plugin`** and a parseable manifest on the default branch. It refreshes every 30 minutes.
+
+Release checklist:
+
+1. Bump `version` in `herdr-plugin.toml` and `Cargo.toml` (via PR).
+2. After merge, tag `v<version>` on `main` and push the tag. `release.yml` builds the four binaries and `SHA256SUMS`.
+3. Check the release assets before announcing.
 
 ## Keys (inside the strip)
 
