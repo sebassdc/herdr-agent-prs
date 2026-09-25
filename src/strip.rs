@@ -159,7 +159,8 @@ struct App {
     /// Pushed branch -> (last checked, had a PR). Branches with a PR are final.
     branch_checked: HashMap<Push, (Instant, bool)>,
     table: TableState,
-    hide_merged: bool,
+    /// Show merged/closed PRs that config hides by default (`m`).
+    show_done: bool,
     message: Option<String>,
     fetching: bool,
     applied_size: Option<u16>,
@@ -175,7 +176,6 @@ struct App {
 impl App {
     fn new(cfg: Config, target: String, position: Position) -> Self {
         let (tx, rx) = mpsc::channel();
-        let hide_merged = cfg.hide_merged;
         Self {
             cfg,
             target,
@@ -197,7 +197,7 @@ impl App {
             pushes: Pushes::new(),
             branch_checked: HashMap::new(),
             table: TableState::default().with_selected(Some(0)),
-            hide_merged,
+            show_done: false,
             message: None,
             fetching: false,
             applied_size: None,
@@ -371,7 +371,7 @@ impl App {
                     None if !(self.cfg.show_mentioned || e.signal == Signal::Owned) => return false,
                     None => {}
                 }
-                !(self.hide_merged && matches!(&e.status, Some(Ok(s)) if s.state == State::Merged))
+                !self.is_hidden_done(e)
             })
             .collect();
         // Owned first, then open before closed/merged, then first-seen order.
@@ -383,11 +383,20 @@ impl App {
         v
     }
 
-    fn hidden_merged(&self) -> usize {
-        self.entries
-            .values()
-            .filter(|e| matches!(&e.status, Some(Ok(s)) if s.state == State::Merged))
-            .count()
+    /// Merged/closed PR that config hides and `m` has not revealed.
+    fn is_hidden_done(&self, e: &Entry) -> bool {
+        if self.show_done {
+            return false;
+        }
+        match &e.status {
+            Some(Ok(s)) if s.state == State::Merged => self.cfg.hide_merged,
+            Some(Ok(s)) if s.state == State::Closed => self.cfg.hide_closed,
+            _ => false,
+        }
+    }
+
+    fn hidden_done(&self) -> usize {
+        self.entries.values().filter(|e| self.is_hidden_done(e)).count()
     }
 
     fn selected_url(&self) -> Option<String> {
@@ -400,7 +409,7 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
             KeyCode::Char('j') | KeyCode::Down => self.table.select_next(),
             KeyCode::Char('k') | KeyCode::Up => self.table.select_previous(),
-            KeyCode::Char('m') => self.hide_merged = !self.hide_merged,
+            KeyCode::Char('m') => self.show_done = !self.show_done,
             KeyCode::Char('a') => self.show_all = !self.show_all,
             KeyCode::Char('?') => self.help = !self.help,
             KeyCode::Char('x') => self.toggle_label(Label::NotMine),
@@ -611,7 +620,7 @@ fn render(app: &mut App, f: &mut Frame) {
     app.links.clear();
     let [head, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(f.area());
     let visible = app.visible();
-    let hidden = if app.hide_merged { app.hidden_merged() } else { 0 };
+    let hidden = app.hidden_done();
 
     let mut spans = vec![
         Span::styled(" PRs ", Style::new().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -620,7 +629,7 @@ fn render(app: &mut App, f: &mut Frame) {
         Span::styled(format!(" · {} shown", visible.len()), DIM),
     ];
     if hidden > 0 {
-        spans.push(Span::styled(format!(" · {hidden} merged hidden"), DIM));
+        spans.push(Span::styled(format!(" · {hidden} merged/closed hidden"), DIM));
     }
     if app.fetching {
         spans.push(Span::styled(" · refreshing…", Style::new().fg(Color::Yellow)));
@@ -640,7 +649,7 @@ fn render(app: &mut App, f: &mut Frame) {
             ("x  hide", "not this agent's PR: hide it here (row gets ✗). Press x again to undo."),
             ("p  pin", "this agent's PR: keep it shown (row gets ★). Use on PRs the plugin missed, or to confirm one."),
             ("a  all", "show everything: merged, chat mentions (~), and hidden (✗) rows, so you can undo labels"),
-            ("m / r", "show/hide merged PRs  ·  refresh now"),
+            ("m / r", "show/hide merged and closed PRs  ·  refresh now"),
             ("markers", "~ only mentioned in chat (dimmed)  ★ pinned by you  ✗ hidden by you  · ? closes help"),
         ];
         let text: Vec<Line> = lines

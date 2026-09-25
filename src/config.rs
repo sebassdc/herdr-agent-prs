@@ -57,6 +57,7 @@ pub struct Config {
     /// Strip width in columns (left/right placement).
     pub width: u16,
     pub hide_merged: bool,
+    pub hide_closed: bool,
     /// Focus the strip when it opens (false keeps focus on the agent).
     pub focus_on_open: bool,
     pub show_mentioned: bool,
@@ -95,6 +96,7 @@ impl Default for Config {
             max_rows: 8,
             width: 72,
             hide_merged: true,
+            hide_closed: true,
             focus_on_open: true,
             show_mentioned: false,
             cache_ttl_secs: 60,
