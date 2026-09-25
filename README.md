@@ -48,7 +48,7 @@ description = "toggle agent PR strip"
 
 The `repo#N` label is a terminal hyperlink (OSC 8): Ctrl/Cmd+click opens the PR.
 
-`j/k` move · `o`/Enter open in browser · `y` copy URL · `x` hide (not this agent's PR) · `p` pin (this agent's PR) · `a` show all (merged, mentions, hidden) · `m` show/hide merged · `r` refresh · `?` help · `q` close
+`j/k` move · `o`/Enter open in browser · `y` copy URL · `x` hide (not this agent's PR) · `p` pin (this agent's PR) · `a` show all (merged, mentions, hidden) · `m` show/hide merged and closed · `r` refresh · `?` help · `q` close
 
 Row markers: `~` only mentioned in chat (dimmed), `★` pinned by you, `✗` hidden by you. `x` and `p` toggle and are saved per agent session. They are also the ground truth for improving detection (see Telemetry).
 
@@ -63,6 +63,7 @@ position = "top"       # top | bottom | left | right
 max_rows = 8
 width = 72             # left/right placement
 hide_merged = true
+hide_closed = true
 focus_on_open = true   # false keeps focus on the agent
 show_mentioned = false  # show dimmed PRs only mentioned in chat
 cache_ttl_secs = 60
