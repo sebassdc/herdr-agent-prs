@@ -63,7 +63,6 @@ position = "top"       # top | bottom | left | right
 max_rows = 8
 width = 72             # left/right placement
 hide_merged = true
-focus_on_open = true   # false keeps focus on the agent
 show_mentioned = false  # show dimmed PRs only mentioned in chat
 cache_ttl_secs = 60
 
