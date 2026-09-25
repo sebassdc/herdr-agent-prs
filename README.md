@@ -1,6 +1,8 @@
 # herdr-agent-prs
 
-Herdr plugin (`sebassdc.agent-prs`): a strip docked to an agent pane that lists the pull requests **that agent** opened or worked on, across any repos, with live state (draft/open/merged/closed, CI, review, mergeability, diff size). It does not depend on the pane's working directory.
+**A cross-repo PR viewer for coding agents.**
+
+Coding agents rarely stay in one repo: one task can open a PR in the API, another in the web app, and push a fix to infra. Most PR tools start from a repo. This plugin (`sebassdc.agent-prs`) starts from the **agent**: press a key on an agent's pane and a strip docks above it, listing every pull request that agent opened or pushed to, in any repo, with live CI, review and merge state. It works from any directory, including a folder of many repos that isn't a git repo itself.
 
 ![Agent PRs strip: an agent opens PRs in two repos, prefix+ctrl+p shows them with CI, review and merge state](assets/demo.gif)
 
