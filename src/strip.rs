@@ -108,11 +108,15 @@ pub fn scan_once(target: &str) -> Scan {
     let agent_name = info.as_ref().and_then(|i| i.name.clone().or(i.agent.clone()));
     let mut found = Found::new();
     let mut pushes = Pushes::new();
-    if let Some(path) = info.as_ref().and_then(session::transcript_path) {
-        if let Ok(text) = std::fs::read_to_string(&path) {
-            detect::from_jsonl(&text, &mut found, &mut pushes);
-            return Scan { found, pushes, source: format!("transcript {}", path.display()), agent_name };
+    let paths = info.as_ref().map(session::transcript_paths).unwrap_or_default();
+    if !paths.is_empty() {
+        for path in &paths {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                detect::from_jsonl(&text, &mut found, &mut pushes);
+            }
         }
+        let source = format!("transcript {} (+{} subagent files)", paths[0].display(), paths.len() - 1);
+        return Scan { found, pushes, source, agent_name };
     }
     if let Ok(text) = herdr::read_pane(target, 3000) {
         detect::from_text(&text, &mut found, &mut pushes);
@@ -127,14 +131,16 @@ struct App {
     own_pane: Option<String>,
     agent_name: Option<String>,
     source: String,
-    transcript: Option<PathBuf>,
-    mtime: Option<SystemTime>,
+    info: Option<herdr::AgentInfo>,
+    /// (path, mtime) of every transcript file at the last scan.
+    fingerprint: Vec<(PathBuf, Option<SystemTime>)>,
     entries: HashMap<PrRef, Entry>,
     session: Option<String>,
     agent_kind: Option<String>,
     labels: std::collections::BTreeMap<String, Label>,
     /// Show everything: merged, mentions, and PRs you marked not-mine.
     show_all: bool,
+    help: bool,
     last_counts: Option<(usize, usize, usize)>,
     opened_at: Instant,
     pushes: Pushes,
@@ -165,13 +171,14 @@ impl App {
             own_pane: None,
             agent_name: None,
             source: String::new(),
-            transcript: None,
-            mtime: None,
+            info: None,
+            fingerprint: Vec::new(),
             entries: HashMap::new(),
             session: None,
             agent_kind: None,
             labels: Default::default(),
             show_all: false,
+            help: false,
             last_counts: None,
             opened_at: Instant::now(),
             pushes: Pushes::new(),
@@ -218,11 +225,7 @@ impl App {
             self.labels = session.as_deref().map(telemetry::labels_for).unwrap_or_default();
             self.session = session;
         }
-        let path = info.as_ref().and_then(session::transcript_path);
-        if path != self.transcript {
-            self.transcript = path;
-            self.mtime = None;
-        }
+        self.info = info;
     }
 
     fn rescan(&mut self, force: bool) {
@@ -230,18 +233,28 @@ impl App {
         if force || self.last_resolve.is_none_or(|t| now - t >= RESOLVE_EVERY) {
             self.resolve();
         }
-        if let Some(path) = self.transcript.clone() {
-            let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
-            if force || mtime != self.mtime {
-                self.mtime = mtime;
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    let mut found = Found::new();
-                    let mut pushes = Pushes::new();
-                    detect::from_jsonl(&text, &mut found, &mut pushes);
-                    self.merge_found(found);
-                    self.pushes.extend(pushes);
-                    self.source = "transcript".into();
+        // Re-list each time: subagents create new transcript files mid-session.
+        let paths = self.info.as_ref().map(session::transcript_paths).unwrap_or_default();
+        if !paths.is_empty() {
+            let fingerprint: Vec<(PathBuf, Option<SystemTime>)> = paths
+                .into_iter()
+                .map(|p| {
+                    let m = std::fs::metadata(&p).and_then(|m| m.modified()).ok();
+                    (p, m)
+                })
+                .collect();
+            if force || fingerprint != self.fingerprint {
+                let mut found = Found::new();
+                let mut pushes = Pushes::new();
+                for (path, _) in &fingerprint {
+                    if let Ok(text) = std::fs::read_to_string(path) {
+                        detect::from_jsonl(&text, &mut found, &mut pushes);
+                    }
                 }
+                self.merge_found(found);
+                self.pushes.extend(pushes);
+                self.source = "transcript".into();
+                self.fingerprint = fingerprint;
             }
         } else if force || self.last_scrollback.is_none_or(|t| now - t >= SCROLLBACK_EVERY) {
             self.last_scrollback = Some(now);
@@ -376,6 +389,7 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => self.table.select_previous(),
             KeyCode::Char('m') => self.hide_merged = !self.hide_merged,
             KeyCode::Char('a') => self.show_all = !self.show_all,
+            KeyCode::Char('?') => self.help = !self.help,
             KeyCode::Char('x') => self.toggle_label(Label::NotMine),
             KeyCode::Char('p') => self.toggle_label(Label::Mine),
             KeyCode::Char('r') => {
@@ -427,9 +441,9 @@ impl App {
         };
         self.log_pr("label", &url, serde_json::json!({ "label": name }));
         self.message = Some(match next {
-            Some(Label::NotMine) => "marked not this agent's (a shows all)".into(),
-            Some(Label::Mine) => "marked this agent's".into(),
-            None => "label cleared".into(),
+            Some(Label::NotMine) => "hidden: not this agent's PR (a shows it, x again undoes)".into(),
+            Some(Label::Mine) => "pinned: this agent's PR (p again undoes)".into(),
+            None => "label removed".into(),
         });
     }
 
@@ -603,8 +617,25 @@ fn render(app: &mut App, f: &mut Frame) {
     if app.show_all {
         spans.push(Span::styled(" · showing all", Style::new().fg(Color::Yellow)));
     }
-    spans.push(Span::styled("   o open  y copy  x not-mine  p mine  a all  m merged  r refresh  q close", DIM));
+    spans.push(Span::styled("   o open  y copy  x hide  p pin  a all  ? help  q close", DIM));
     f.render_widget(Paragraph::new(Line::from(spans)), head);
+
+    if app.help {
+        let lines = [
+            ("o / Enter", "open the selected PR in the browser;  y copies its URL"),
+            ("x  hide", "not this agent's PR: hide it here (row gets ✗). Press x again to undo."),
+            ("p  pin", "this agent's PR: keep it shown (row gets ★). Use on PRs the plugin missed, or to confirm one."),
+            ("a  all", "show everything: merged, chat mentions (~), and hidden (✗) rows, so you can undo labels"),
+            ("m / r", "show/hide merged PRs  ·  refresh now"),
+            ("markers", "~ only mentioned in chat (dimmed)  ★ pinned by you  ✗ hidden by you  · ? closes help"),
+        ];
+        let text: Vec<Line> = lines
+            .iter()
+            .map(|(k, v)| Line::from(vec![Span::styled(format!(" {k:<10} "), Style::new().fg(Color::Cyan)), Span::raw(*v)]))
+            .collect();
+        f.render_widget(Paragraph::new(text), body);
+        return;
+    }
 
     if visible.is_empty() {
         let text = if app.source.is_empty() { "scanning…".to_owned() } else { format!("no PRs for this agent ({})", app.source) };
@@ -615,16 +646,19 @@ fn render(app: &mut App, f: &mut Frame) {
     let rows: Vec<TRow> = visible
         .iter()
         .map(|e| {
-            let name = format!(
-                "{}{}#{}",
-                if e.signal == Signal::Mentioned { "~" } else { "" },
-                e.pr.repo,
-                e.pr.number
-            );
-            let name = match app.labels.get(&e.pr.url()) {
-                Some(Label::NotMine) => format!("✗{name}"),
-                Some(Label::Mine) => format!("✓{name}"),
-                None => name,
+            // One marker per row: your label wins over what the rule found.
+            let label = app.labels.get(&e.pr.url()).copied();
+            let marker = match (label, e.signal) {
+                (Some(Label::NotMine), _) => "✗ ",
+                (Some(Label::Mine), _) => "★ ",
+                (None, Signal::Mentioned) => "~ ",
+                (None, Signal::Owned) => "  ",
+            };
+            let name = format!("{marker}{}#{}", e.pr.repo, e.pr.number);
+            let dim = match label {
+                Some(Label::NotMine) => true,
+                Some(Label::Mine) => false,
+                None => e.signal == Signal::Mentioned,
             };
             let row = match &e.status {
                 None => TRow::new(vec![Line::from(name), Line::from(Span::styled("…", DIM))]),
@@ -647,7 +681,7 @@ fn render(app: &mut App, f: &mut Frame) {
                     Line::from(s.title.clone()),
                 ]),
             };
-            if e.signal == Signal::Mentioned { row.style(DIM) } else { row }
+            if dim { row.style(DIM) } else { row }
         })
         .collect();
     let table = Table::new(

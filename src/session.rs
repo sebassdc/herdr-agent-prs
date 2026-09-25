@@ -5,6 +5,33 @@ use std::path::{Path, PathBuf};
 
 use crate::herdr::AgentInfo;
 
+/// Main transcript plus, for Claude, the transcripts of subagents and
+/// Workflow agents it spawned (`<session dir>/subagents/**`, `workflows/**`).
+/// PRs opened by a subagent belong to the agent that delegated the work.
+pub fn transcript_paths(info: &AgentInfo) -> Vec<PathBuf> {
+    let Some(main) = transcript_path(info) else { return Vec::new() };
+    let mut paths = vec![main.clone()];
+    if info.agent.as_deref() == Some("claude") {
+        let dir = main.with_extension("");
+        collect_jsonl(&dir.join("subagents"), &mut paths);
+        collect_jsonl(&dir.join("workflows"), &mut paths);
+    }
+    paths
+}
+
+fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for p in entries {
+        if p.is_dir() {
+            collect_jsonl(&p, out);
+        } else if p.extension().is_some_and(|e| e == "jsonl") {
+            out.push(p);
+        }
+    }
+}
+
 pub fn transcript_path(info: &AgentInfo) -> Option<PathBuf> {
     let value = info.session_value.as_deref()?;
     if info.session_kind.as_deref() == Some("path") {

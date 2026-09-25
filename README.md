@@ -4,7 +4,7 @@ Herdr plugin (`sebassdc.agent-prs`): a strip docked to an agent pane that lists 
 
 ## How it works
 
-1. `herdr agent get <pane>` gives the agent's session id, which is used to find its transcript (Claude `~/.claude/projects/*/<id>.jsonl`, Codex `~/.codex/sessions/**/*<id>*.jsonl`). If no transcript is found, it falls back to `herdr pane read` scrollback.
+1. `herdr agent get <pane>` gives the agent's session id, which is used to find its transcript (Claude `~/.claude/projects/*/<id>.jsonl` plus its subagent and Workflow transcripts under `<id>/subagents/` and `<id>/workflows/`; Codex `~/.codex/sessions/**/*<id>*.jsonl`). If no transcript is found, it falls back to `herdr pane read` scrollback.
 2. PRs are attributed to the agent only when it acted on them:
    - it ran `gh pr create|merge|edit|ready|comment|close|reopen` (the command itself, parsed per shell segment; heredoc bodies and file contents don't count) or a PR tool such as a GitHub MCP `create_pull_request`;
    - or it ran `git push` and the output shows the pushed GitHub branch. That branch is then resolved to its PRs with one batched `gh` query, so PRs opened in an earlier session still count.
@@ -46,9 +46,9 @@ description = "toggle agent PR strip"
 
 ## Keys (inside the strip)
 
-`j/k` move · `o`/Enter open in browser · `y` copy URL · `x` not this agent's PR · `p` this agent's PR · `a` show all (merged, mentions, marked not-mine) · `m` show/hide merged · `r` refresh · `q` close
+`j/k` move · `o`/Enter open in browser · `y` copy URL · `x` hide (not this agent's PR) · `p` pin (this agent's PR) · `a` show all (merged, mentions, hidden) · `m` show/hide merged · `r` refresh · `?` help · `q` close
 
-`x` and `p` toggle, and are saved per agent session. They are also the ground truth for improving detection (see Telemetry).
+Row markers: `~` only mentioned in chat (dimmed), `★` pinned by you, `✗` hidden by you. `x` and `p` toggle and are saved per agent session. They are also the ground truth for improving detection (see Telemetry).
 
 Running the toggle with the strip focused also closes it.
 
