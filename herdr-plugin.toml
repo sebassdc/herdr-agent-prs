@@ -1,0 +1,29 @@
+id = "sebassdc.agent-prs"
+name = "Agent PRs"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Docked strip listing the pull requests an agent opened or worked on, across repos, with live CI/review/merge state."
+platforms = ["macos", "linux"]
+
+# Compile the Rust binary into bin/. Herdr resolves relative programs against
+# $HERDR_PLUGIN_ROOT.
+[[build]]
+platforms = ["macos", "linux"]
+command = ["bash", "scripts/build.sh"]
+
+# Toggle the strip for the focused agent pane. Pressed inside a strip, it
+# closes that strip.
+[[actions]]
+id = "toggle"
+title = "Agent PRs: toggle strip"
+description = "Show or hide the PR strip for the focused agent pane."
+contexts = ["pane"]
+command = ["./bin/herdr-agent-prs", "toggle"]
+
+# The strip itself. Opened by `toggle` via `herdr plugin pane open
+# --placement split`, which passes AGENT_PRS_TARGET / AGENT_PRS_POSITION.
+[[panes]]
+id = "strip"
+title = "agent PRs"
+placement = "split"
+command = ["./bin/herdr-agent-prs", "strip"]
