@@ -1,6 +1,6 @@
 id = "sebassdc.agent-prs"
 name = "Agent PRs"
-version = "0.1.1"
+version = "0.1.2"
 min_herdr_version = "0.9.0"
 description = "Docked strip listing the pull requests an agent opened or worked on, across repos, with live CI/review/merge state."
 platforms = ["macos", "linux"]
