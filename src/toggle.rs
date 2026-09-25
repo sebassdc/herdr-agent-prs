@@ -68,7 +68,7 @@ pub fn run(target: Option<String>, position: Option<Position>) -> Result<()> {
     save_strips(&strips)
 }
 
-fn open(agent: &str, pos: Position, _cfg: &Config) -> Result<String> {
+fn open(agent: &str, pos: Position, cfg: &Config) -> Result<String> {
     let dir = if pos.vertical() { "down" } else { "right" };
     let v = herdr::run(&[
         "plugin",
@@ -99,6 +99,12 @@ fn open(agent: &str, pos: Position, _cfg: &Config) -> Result<String> {
     };
     if matches!(pos, Position::Top | Position::Left) {
         herdr::run(&["pane", "swap", "--source-pane", &strip, "--target-pane", agent])?;
+    }
+    // Focus the strip so its keys work right away (the swap above can also
+    // move focus, so set it explicitly either way).
+    if cfg.focus_on_open {
+        herdr::run(&["plugin", "pane", "focus", &strip])?;
+    } else if matches!(pos, Position::Top | Position::Left) {
         // Focus stays with the screen slot on swap; hand it back to the agent.
         let back = if pos == Position::Top { "down" } else { "right" };
         herdr::run(&["pane", "focus", "--direction", back, "--pane", &strip])?;
