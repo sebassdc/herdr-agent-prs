@@ -1,6 +1,6 @@
 [package]
 name = "herdr-agent-prs"
-version = "0.1.2"
+version = "0.1.3"
 license = "MIT"
 description = "A cross-repo PR viewer for coding agents (Herdr plugin)"
 repository = "https://github.com/sebassdc/herdr-agent-prs"
