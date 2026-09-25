@@ -62,6 +62,8 @@ pub struct Config {
     pub focus_on_open: bool,
     pub show_mentioned: bool,
     pub cache_ttl_secs: u64,
+    /// Demo mode: JSON fixture of PRs to show instead of real data.
+    pub demo_file: Option<String>,
     pub jev: Jev,
     pub telemetry: Telemetry,
 }
@@ -100,6 +102,7 @@ impl Default for Config {
             focus_on_open: true,
             show_mentioned: false,
             cache_ttl_secs: 60,
+            demo_file: None,
             jev: Jev::default(),
             telemetry: Telemetry::default(),
         }

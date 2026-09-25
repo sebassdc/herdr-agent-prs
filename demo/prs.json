@@ -1,0 +1,11 @@
+{
+  "agent": "api-refactor",
+  "prs": [
+    { "owner": "acme", "repo": "api", "number": 142, "title": "Add rate limiting to public endpoints", "state": "open", "ci": "passing", "review": "approved", "merge": "ready", "additions": 312, "deletions": 48, "files": 9 },
+    { "owner": "acme", "repo": "web", "number": 87, "title": "Show rate-limit errors in the dashboard", "state": "open", "ci": "failing", "review": "waiting", "reviewers": 2, "merge": "blocked", "additions": 95, "deletions": 12, "files": 4 },
+    { "owner": "acme", "repo": "api", "number": 139, "title": "Extract token bucket into its own module", "state": "open", "ci": "pending", "review": "changes", "merge": "behind", "additions": 40, "deletions": 7, "files": 2, "reason": "push" },
+    { "owner": "acme", "repo": "infra", "number": 23, "title": "Raise API gateway burst limit", "state": "draft", "ci": "none", "review": "none", "merge": "", "additions": 18, "deletions": 2, "files": 1 },
+    { "owner": "acme", "repo": "api", "number": 131, "title": "Move auth middleware to tower layers", "state": "merged", "ci": "passing", "review": "approved", "merge": "", "additions": 204, "deletions": 61, "files": 7 },
+    { "owner": "acme", "repo": "docs", "number": 56, "title": "Document rate limits (superseded by docs#58)", "state": "closed", "ci": "passing", "review": "none", "merge": "", "additions": 33, "deletions": 0, "files": 1, "reason": "push" }
+  ]
+}

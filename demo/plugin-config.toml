@@ -1,0 +1,5 @@
+# Plugin config for the demo recording: fixture data, no telemetry.
+demo_file = "__ROOT__/demo/prs.json"
+
+[telemetry]
+enabled = false

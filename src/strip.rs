@@ -241,7 +241,64 @@ impl App {
         self.info = info;
     }
 
+    /// Demo mode (`demo_file` in config): fixed PRs from a JSON fixture, no
+    /// transcript, scrollback or `gh` calls. Used to record the README demo.
+    fn load_demo(&mut self, path: &str) -> Result<()> {
+        let text = std::fs::read_to_string(path).with_context(|| format!("demo file {path}"))?;
+        let v: Value = serde_json::from_str(&text)?;
+        self.agent_name = v["agent"].as_str().map(str::to_owned);
+        self.source = "demo".into();
+        let now = Instant::now();
+        for (order, p) in v["prs"].as_array().context("demo: prs[]")?.iter().enumerate() {
+            let str_of = |k: &str| p[k].as_str().unwrap_or("").to_owned();
+            let pr = PrRef { owner: str_of("owner"), repo: str_of("repo"), number: p["number"].as_u64().unwrap_or(0) };
+            let status = PrStatus {
+                title: str_of("title"),
+                state: match p["state"].as_str() {
+                    Some("draft") => State::Draft,
+                    Some("merged") => State::Merged,
+                    Some("closed") => State::Closed,
+                    _ => State::Open,
+                },
+                ci: match p["ci"].as_str() {
+                    Some("passing") => Ci::Passing,
+                    Some("failing") => Ci::Failing,
+                    Some("pending") => Ci::Pending,
+                    _ => Ci::None,
+                },
+                review: match p["review"].as_str() {
+                    Some("approved") => Review::Approved,
+                    Some("changes") => Review::ChangesRequested,
+                    Some("waiting") => Review::Waiting(p["reviewers"].as_u64().unwrap_or(0)),
+                    _ => Review::NotRequired,
+                },
+                merge: match p["merge"].as_str() {
+                    Some("ready") => Merge::Ready,
+                    Some("conflicts") => Merge::Conflicts,
+                    Some("blocked") => Merge::Blocked,
+                    Some("behind") => Merge::Behind,
+                    Some("unstable") => Merge::Unstable,
+                    Some("") | None => Merge::NotApplicable,
+                    _ => Merge::Unknown,
+                },
+                additions: p["additions"].as_u64().unwrap_or(0),
+                deletions: p["deletions"].as_u64().unwrap_or(0),
+                files: p["files"].as_u64().unwrap_or(0),
+            };
+            let (signal, reason) = match p["reason"].as_str() {
+                Some("chat") => (Signal::Mentioned, Reason::Chat),
+                Some("push") => (Signal::Owned, Reason::Push),
+                _ => (Signal::Owned, Reason::Action),
+            };
+            self.entries.insert(pr.clone(), Entry { pr, signal, reason, order, status: Some(Ok(status)), fetched: Some(now) });
+        }
+        Ok(())
+    }
+
     fn rescan(&mut self, force: bool) {
+        if self.source == "demo" {
+            return;
+        }
         let now = Instant::now();
         if force || self.last_resolve.is_none_or(|t| now - t >= RESOLVE_EVERY) {
             self.resolve();
@@ -283,6 +340,9 @@ impl App {
     }
 
     fn maybe_fetch(&mut self, force: bool) {
+        if self.source == "demo" {
+            return;
+        }
         if self.fetching {
             return;
         }
@@ -543,8 +603,16 @@ fn resize_to(own: &str, target: &str, pos: Position, want: u16) -> Result<()> {
         p.pointer(&format!("/rect/{key}"))?.as_f64()
     };
     let (mine, theirs) = (dim(own).context("own rect")?, dim(target).context("target rect")?);
+    // `want` is inner content size. Pane borders/title (present in some Herdr
+    // themes) take space too: the difference between the pane rect and our
+    // own terminal size.
+    let inner = crossterm::terminal::size()
+        .map(|(w, h)| if pos.vertical() { h } else { w } as f64)
+        .unwrap_or(mine);
+    let chrome = (mine - inner).max(0.0);
+    let want = want as f64 + chrome;
     let total = mine + theirs;
-    let delta = (mine - want as f64) / total;
+    let delta = (mine - want) / total;
     if delta.abs() * total < 1.0 {
         return Ok(());
     }
@@ -575,6 +643,8 @@ fn copy(text: &str) -> Result<()> {
 // ---------- rendering ----------
 
 const DIM: Style = Style::new().fg(Color::DarkGray);
+const SELECTED_BG_ANSI: u8 = 237;
+const SELECTED_BG: Color = Color::Indexed(SELECTED_BG_ANSI);
 
 fn state_span(s: &PrStatus) -> Span<'static> {
     match s.state {
@@ -731,7 +801,9 @@ fn render(app: &mut App, f: &mut Frame) {
         ],
     )
     .column_spacing(1)
-    .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
+    // A background tint keeps the state colours readable; REVERSED turned
+    // every coloured label into a solid block.
+    .row_highlight_style(Style::new().bg(SELECTED_BG).add_modifier(Modifier::BOLD))
     .highlight_symbol("▸");
     f.render_stateful_widget(table, body, &mut app.table);
 
@@ -772,7 +844,7 @@ fn write_links(links: &[Link]) -> io::Result<()> {
     use crossterm::{
         cursor::MoveTo,
         queue,
-        style::{Attribute, Color as CColor, Print, ResetColor, SetAttribute, SetForegroundColor},
+        style::{Attribute, Color as CColor, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
     };
     use std::io::Write;
     if links.is_empty() {
@@ -785,7 +857,7 @@ fn write_links(links: &[Link]) -> io::Result<()> {
             queue!(out, SetForegroundColor(CColor::DarkGrey))?;
         }
         if l.selected {
-            queue!(out, SetAttribute(Attribute::Reverse))?;
+            queue!(out, SetBackgroundColor(CColor::AnsiValue(SELECTED_BG_ANSI)), SetAttribute(Attribute::Bold))?;
         }
         queue!(
             out,
@@ -798,6 +870,11 @@ fn write_links(links: &[Link]) -> io::Result<()> {
 }
 
 fn main_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
+    if let Some(demo) = app.cfg.demo_file.clone() {
+        if let Err(e) = app.load_demo(&demo) {
+            app.message = Some(e.to_string());
+        }
+    }
     app.rescan(true);
     app.log("strip_open", serde_json::json!({ "position": app.position.as_str() }));
     app.maybe_fetch(false);
