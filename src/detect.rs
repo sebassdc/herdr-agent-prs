@@ -32,8 +32,9 @@ static PR_TOOL: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static GH_PR_SEGMENT: LazyLock<Regex> = LazyLock::new(|| {
-    // Segment start: optional prompt / subshell / env assignments, then gh pr <verb>.
-    Regex::new(r"^(?:\$\s+|❯\s+|\(\s*|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*gh\s+pr\s+(create|merge|edit|ready|comment|close|reopen)\b").unwrap()
+    // Segment start: optional prompt / subshell / command substitution
+    // (`$(`, `VAR=$(`) / env assignments, then gh pr <verb>.
+    Regex::new(r"^(?:\$\s+|❯\s+|\$?\(\s*|[A-Za-z_][A-Za-z0-9_]*=\$\(\s*|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*gh\s+pr\s+(create|merge|edit|ready|comment|close|reopen)\b").unwrap()
 });
 
 static SEGMENT_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n|;|&&|\|\||\|").unwrap());
@@ -413,6 +414,17 @@ mod tests {
             r#"{"message":{"role":"assistant","content":[{"type":"text","text":"see https://github.com/acme/flow/pull/7"}]}}"#,
         );
         assert_eq!(scan(t), vec![(42, Signal::Owned), (7, Signal::Mentioned)]);
+    }
+
+    #[test]
+    fn gh_pr_create_in_command_substitution_is_owned() {
+        let t = concat!(
+            r#"{"message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"git push -q -u origin b 2>&1 | tail -1; F=$(gh pr create -R o/r --fill); echo \"$F\""}}]}}"#,
+            "\n",
+            r#"{"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"remote: \nhttps://github.com/o/r/pull/2671"}]}}"#,
+        );
+        assert_eq!(scan(t), vec![(2671, Signal::Owned)]);
+        assert!(gh_pr_segments("$(gh pr merge 5 -R o/r)").0);
     }
 
     #[test]
