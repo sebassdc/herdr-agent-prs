@@ -1,6 +1,6 @@
 id = "sebassdc.agent-prs"
 name = "Agent PRs"
-version = "0.1.3"
+version = "0.1.4"
 min_herdr_version = "0.9.0"
 description = "A cross-repo PR viewer for coding agents: every pull request an agent opened or pushed to, in any repo, with live CI, review and merge state."
 platforms = ["macos", "linux"]
